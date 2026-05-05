@@ -28,16 +28,16 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
+    
+    <script>
+        // DÁN URL GOOGLE APPS SCRIPT VÀO ĐÂY:
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxVbfS60Mta6UucvTcl5z_rl36cM105_dBUOGS8dDtw6YOMQNmOrubAVV2CRlVC_BLGAw/exec"; 
+    </script>
 </head>
 <body>
     <div id="root"></div>
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        
-        // CẤU HÌNH ĐỊA CHỈ BACKEND
-        const API_URL = "https://th-trmy.x10.mx/api.php";
-        const BASE_URL = "https://th-trmy.x10.mx/";
-
         const Icon = ({ name, size = 20, className="" }) => {
             const ref = useRef(null);
             useEffect(() => { if (window.lucide) window.lucide.createIcons({ root: ref.current }); }, [name]);
@@ -48,6 +48,16 @@
             let id = localStorage.getItem('thmy_device_id');
             if (!id) { id = 'dev_' + Math.random().toString(36).substr(2, 9); localStorage.setItem('thmy_device_id', id); } return id;
         };
+
+        // Hàm gọi API tới Google Apps Script
+        const fetchAPI = async (action, data = {}) => {
+            try {
+                const url = new URL(GOOGLE_SCRIPT_URL);
+                url.searchParams.append('action', action);
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) });
+                return await res.json();
+            } catch(e) { console.error("API Error:", e); throw e; }
+        }
 
         const ResultView = ({ attempt, exam, fullData, onBack }) => {
             useEffect(() => { if (window.MathJax) window.MathJax.typeset(); }, []);
@@ -124,15 +134,15 @@
 
             const fetchHistory = async (info) => {
                 try {
-                    const res = await fetch(`${API_URL}?action=history`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(info) });
-                    setHistory(await res.json());
+                    const data = await fetchAPI('history', info);
+                    setHistory(data);
                 } catch(e) {}
             };
 
             useEffect(() => {
                 const savedInfo = localStorage.getItem('thmy_student');
                 if (savedInfo) { const info = JSON.parse(savedInfo); setStudentInfo(info); setView('folders'); fetchHistory(info); }
-                fetch(`${API_URL}?action=list`).then(r => r.json()).then(data => setExams(data)).catch(e => console.error(e));
+                fetchAPI('list').then(data => setExams(data)).catch(e => console.error(e));
             }, []);
 
             useEffect(() => { if (activeExam && activeExam.type === 'pdf') { localStorage.setItem(`thmy_draft_${activeExam.id}`, JSON.stringify(userAnswers)); } }, [userAnswers, activeExam]);
@@ -151,7 +161,7 @@
                     if (isStrict) {
                         const handleVisibilityChange = () => {
                             if (document.hidden) {
-                                alert("CẢNH BÁO VI PHẠM: Phát hiện chuyển Tab/thoát màn hình làm bài. Hệ thống tự động nộp bài!");
+                                alert("CẢNH BÁO VI PHẠM: Phát hiện chuyển Tab/thoát màn hình làm bài! Hệ thống tự động nộp bài.");
                                 triggerDualSubmit();
                             }
                         };
@@ -164,11 +174,10 @@
             const doLogin = async () => {
                 if (!studentInfo.name || !studentInfo.class) { alert("Vui lòng nhập đủ Họ tên và Lớp!"); return; } setLoadingLogin(true);
                 try {
-                    const res = await fetch(`${API_URL}?action=verify_device`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: studentInfo.name, class: studentInfo.class, deviceId: getOrCreateDeviceId() }) });
-                    const data = await res.json();
+                    const data = await fetchAPI('verify_device', { name: studentInfo.name, class: studentInfo.class, deviceId: getOrCreateDeviceId() });
                     if (data.success) {
                         const info = {name: data.student.name, class: data.student.class}; setStudentInfo(info); localStorage.setItem('thmy_student', JSON.stringify(info)); setView('folders'); fetchHistory(info);
-                    } else { alert(data.message); }
+                    } else { alert(data.message || 'Lỗi đăng nhập'); }
                 } catch(err) { alert("Lỗi kết nối. Xin thử lại!"); } setLoadingLogin(false);
             };
 
@@ -187,17 +196,19 @@
                     try {
                         const doc = iframeRef.current.contentWindow.document;
                         const btns = Array.from(doc.querySelectorAll('button, input[type="button"], a.btn'));
-                        const innerBtn = btns.find(b => b.innerText.toLowerCase().includes('nộp') || b.innerText.toLowerCase().includes('kết thúc') || b.value?.toLowerCase().includes('nộp'));
+                        const innerBtn = btns.find(b => b.innerText.toLowerCase().includes('nộp') || b.innerText.toLowerCase().includes('kết thúc') || b.value?.toLowerCase().includes('nộp') || b.innerText.toLowerCase().includes('hoàn thành'));
                         if (innerBtn) { innerBtn.click(); setTimeout(() => submitHtmlScore(), 800); return; }
                     } catch(e) {}
                     submitHtmlScore();
                 } else { submitTest(); }
             };
 
+            const handleTopSubmitClick = () => { if(confirm("Em chắc chắn nộp bài chứ?")) { triggerDualSubmit(); } };
+
             const submitTest = async () => {
                 try {
-                    const res = await fetch(`${API_URL}?action=get_results`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ examId: activeExam.id }) });
-                    const fullData = await res.json(); setFullResultData(fullData);
+                    const fullData = await fetchAPI('get_results', { examId: activeExam.id });
+                    setFullResultData(fullData);
 
                     let totalScore = 0; const correct = fullData?.correctAnswers || {};
                     for(let i=1; i<=(activeExam?.config?.p1||0); i++) if (userAnswers.p1?.[i] === correct.p1?.[i]) totalScore += 0.25;
@@ -211,13 +222,12 @@
                     const attempt = { examId: activeExam.id, name: studentInfo.name, class: studentInfo.class, score: totalScore.toFixed(2), userAnswers: userAnswers, time: Date.now() };
                     localStorage.removeItem(`thmy_draft_${activeExam.id}`);
                     
-                    await fetch(`${API_URL}?action=submit_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attempt) });
+                    await fetchAPI('submit_attempt', attempt);
                     fetchHistory(studentInfo); 
                     setActiveExam({...activeExam, attempt}); 
                     setHasSubmitted(true); setTimeLeft(null);
                     
-                    alert(`Đã nộp bài thành công!
-Điểm số của bạn: ${totalScore.toFixed(2)}`); 
+                    alert(`Đã nộp bài thành công!\nĐiểm số của bạn: ${totalScore.toFixed(2)}`); 
                     setView('result'); 
                 } catch (e) { alert("Lỗi nộp bài! Kiểm tra mạng."); setIsSubmitting(false); }
             };
@@ -228,26 +238,19 @@
                     const doc = iframe.contentWindow.document; const text = doc.body.innerText;
                     const match = text.match(/(\d+[,.]?\d*)\s*\/\s*10/); let score = 0;
                     if(match) { score = parseFloat(match[1].replace(',','.')); } 
-                    else { alert("Lỗi: Không tự quét được điểm. Vui lòng báo Thầy!"); setIsSubmitting(false); return; }
+                    else { alert("Lỗi: Không tự động quét được điểm số trên màn hình bài làm.\nVui lòng kiểm tra lại thao tác nộp bài trong màn hình nhỏ hoặc báo Thầy Mỹ!"); setIsSubmitting(false); return; }
 
-                    const res = await fetch(`${API_URL}?action=get_results`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ examId: activeExam.id }) });
-                    const fullData = await res.json(); setFullResultData(fullData);
+                    const fullData = await fetchAPI('get_results', { examId: activeExam.id });
+                    setFullResultData(fullData);
                     const attempt = { examId: activeExam.id, name: studentInfo.name, class: studentInfo.class, score: score.toFixed(2), time: Date.now() };
                     
-                    await fetch(`${API_URL}?action=submit_attempt`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attempt) });
+                    await fetchAPI('submit_attempt', attempt);
                     fetchHistory(studentInfo); 
                     setActiveExam({...activeExam, attempt}); 
                     setHasSubmitted(true); setTimeLeft(null);
                     
-                    if (fullData.showAnswers) { 
-                        alert(`Đã nộp bài thành công!
-Điểm số của bạn: ${score.toFixed(2)}
-Bạn có thể tiếp tục xem lại bài đã làm.`); 
-                    } else { 
-                        alert(`Đã nộp bài thành công!
-Điểm số của bạn: ${score.toFixed(2)}`); 
-                        setView('list'); 
-                    }
+                    if (fullData.showAnswers) { alert(`Đã nộp bài thành công!\nĐiểm số của bạn: ${score.toFixed(2)}\nBạn có thể tiếp tục xem lại bài đã làm.`); } 
+                    else { alert(`Đã nộp bài thành công!\nĐiểm số của bạn: ${score.toFixed(2)}`); setView('list'); }
                 } catch(e) { alert("Lỗi kết nối bài giảng. Báo Thầy Mỹ để xử lý!"); setIsSubmitting(false); }
             };
 
@@ -263,21 +266,12 @@ Bạn có thể tiếp tục xem lại bài đã làm.`);
                     try {
                         const doc = iframeRef.current.contentWindow.document;
                         const style = doc.createElement('style');
-                        style.textContent = `
-                            img, svg, canvas, .applet_container { 
-                                pointer-events: none !important; 
-                                user-select: none !important; 
-                                -webkit-user-drag: none !important; 
-                            }
-                            button, input, a, select, textarea, .btn { 
-                                pointer-events: auto !important; 
-                            }
-                        `;
+                        style.textContent = `img, svg, canvas, .applet_container { pointer-events: none !important; user-select: none !important; -webkit-user-drag: none !important; } button, input, a, select, textarea, .btn { pointer-events: auto !important; }`;
                         doc.head.appendChild(style);
 
                         doc.addEventListener('click', (e) => {
                             const btn = e.target.closest('button, input[type="button"], a');
-                            if (btn && (btn.innerText.toLowerCase().includes('nộp') || btn.innerText.toLowerCase().includes('kết thúc') || btn.value?.toLowerCase().includes('nộp'))) {
+                            if (btn && (btn.innerText.toLowerCase().includes('nộp') || btn.innerText.toLowerCase().includes('kết thúc') || btn.value?.toLowerCase().includes('nộp') || btn.innerText.toLowerCase().includes('hoàn thành'))) {
                                 setTimeout(() => window.parent.postMessage('trigger_parent_submit', '*'), 500);
                             }
                         });
@@ -306,30 +300,20 @@ Bạn có thể tiếp tục xem lại bài đã làm.`);
             if (view === 'quiz') return (
                 <div className="h-screen flex flex-col overflow-hidden bg-gray-50" onCopy={e=>e.preventDefault()} onCut={e=>e.preventDefault()} onPaste={e=>e.preventDefault()}>
                     <header className="bg-white border-b border-gray-200 p-2 md:p-3 flex justify-between items-center z-10 shrink-0 shadow-sm relative">
-                        <button onClick={()=>{
-                            if(hasSubmitted) {
-                                setView('list'); setTimeLeft(null);
-                            } else if(confirm('Thoát mà chưa nộp bài? Đáp án tạm vẫn được lưu.')) { 
-                                setView('list'); setTimeLeft(null); 
-                            }
-                        }} className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-blue-900 rounded-lg transition-all border border-gray-200"><Icon name="arrow-left" size={16}/></button>
-                        
+                        <button onClick={()=>{ if(hasSubmitted) { setView('list'); setTimeLeft(null); } else if(confirm('Thoát mà chưa nộp bài? Đáp án tạm vẫn được lưu.')) { setView('list'); setTimeLeft(null); } }} className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-blue-900 rounded-lg transition-all border border-gray-200"><Icon name="arrow-left" size={16}/></button>
                         <div className="absolute right-4 top-2 flex items-center gap-2">
                             {timeLeft !== null && !hasSubmitted && <span className="font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg text-sm mr-2 shadow-sm flex items-center gap-1"><Icon name="timer" size={16}/> {formatTime(timeLeft)}</span>}
                             <button onClick={()=>setZoom(z => z + 0.05)} className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg font-bold border border-gray-200 hover:bg-blue-900 hover:text-white transition-all text-xs">A+</button>
                             <button onClick={()=>setZoom(z => z - 0.05)} className="px-3 py-1.5 bg-gray-50 text-gray-700 rounded-lg font-bold border border-gray-200 hover:bg-blue-900 hover:text-white transition-all text-xs">A-</button>
-                            
                             {!hasSubmitted ? (
-                                <button onClick={()=>{if(confirm('Chắc chắn NỘP BÀI ngay?')) triggerDualSubmit();}} disabled={isSubmitting} className="ml-2 bg-red-600 text-white px-6 py-1.5 rounded-lg font-black text-sm uppercase hover:bg-red-700 shadow-lg shadow-red-200/50 transition-all flex items-center gap-1">{isSubmitting ? 'ĐANG NỘP...' : 'NỘP BÀI'}</button>
-                            ) : (
-                                <span className="ml-2 bg-teal-100 text-teal-700 border border-teal-200 px-6 py-1.5 rounded-lg font-black text-sm uppercase flex items-center gap-1"><Icon name="check-circle" size={16}/> ĐÃ NỘP</span>
-                            )}
+                                <button onClick={handleTopSubmitClick} disabled={isSubmitting} className="ml-2 bg-red-600 text-white px-6 py-1.5 rounded-lg font-black text-sm uppercase hover:bg-red-700 shadow-lg shadow-red-200/50 transition-all flex items-center gap-1">{isSubmitting ? 'ĐANG NỘP...' : 'NỘP BÀI'}</button>
+                            ) : (<span className="ml-2 bg-teal-100 text-teal-700 border border-teal-200 px-6 py-1.5 rounded-lg font-black text-sm uppercase flex items-center gap-1"><Icon name="check-circle" size={16}/> ĐÃ NỘP</span>)}
                         </div>
                     </header>
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
                         <div className={`flex-1 border-r border-gray-200 bg-gray-100 overflow-auto ${activeExam?.type==='pdf' ? 'h-1/2 md:h-full' : 'h-full'}`}>
                             <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100/zoom}%`, height: `${100/zoom}%` }}>
-                                <iframe ref={iframeRef} onLoad={handleIframeLoad} src={activeExam ? BASE_URL + activeExam.filePath : ''} className="w-full h-full bg-white border-0 shadow-inner" title="Exam View"></iframe>
+                                <iframe ref={iframeRef} onLoad={handleIframeLoad} src={activeExam?.filePath} className="w-full h-full bg-white border-0 shadow-inner" title="Exam View"></iframe>
                             </div>
                         </div>
                         
@@ -526,7 +510,7 @@ Bạn có thể tiếp tục xem lại bài đã làm.`);
 
                                 return (
                                 <div key={e.id} className={`card-light p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between group gap-6 ${isLocked ? 'card-disabled' : 'cursor-pointer'}`} onClick={()=>{
-                                    if(isLocked) { alert('Bài này đã khóa đáp án!'); return; }
+                                    if(isLocked) { alert('Bài này đã khóa đáp án. Bạn chỉ được phép làm 1 lần và đã nộp bài rồi!'); return; }
                                     startExam(e);
                                 }}>
                                     <div className="flex items-center gap-6">
@@ -537,6 +521,7 @@ Bạn có thể tiếp tục xem lại bài đã làm.`);
                                                 <span className="text-[10px] md:text-xs font-black px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500 border border-gray-200 uppercase tracking-widest shadow-sm">FILE {e.type}</span>
                                                 <span className="text-[10px] md:text-xs font-black px-3 py-1.5 rounded-lg bg-teal-50 text-teal-600 border border-teal-200 uppercase tracking-widest shadow-sm">{e.recordScore!==false ? 'CÓ TÍNH ĐIỂM' : 'ÔN TẬP TỰ DO'}</span>
                                                 {e.config?.timeLimit && <span className="text-[10px] md:text-xs font-black px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 uppercase tracking-widest shadow-sm flex items-center gap-1"><Icon name="clock" size={14}/> {e.config.timeLimit} Phút</span>}
+                                                
                                                 {isLocked ? (
                                                     <span className="text-[10px] md:text-xs font-black px-3 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 uppercase tracking-widest shadow-sm flex items-center gap-1"><Icon name="lock" size={14}/> ĐÃ KHÓA</span>
                                                 ) : isCompleted ? (
