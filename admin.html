@@ -35,15 +35,6 @@
             return <span ref={ref} className={`inline-block ${className}`}><i data-lucide={name} style={{width:size, height:size}}></i></span>;
         };
 
-        const fetchAPI = async (action, data = {}) => {
-            try {
-                const url = new URL(GOOGLE_SCRIPT_URL);
-                url.searchParams.append('action', action);
-                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) });
-                return await res.json();
-            } catch(e) { console.error("API Error:", e); throw e; }
-        }
-
         const ConfigModal = ({ exam, onSave, onClose }) => {
             const [tab, setTab] = useState('answers');
             const [data, setData] = useState({
@@ -161,6 +152,30 @@
             
             const [fileUrl, setFileUrl] = useState('');
 
+            // State lưu trữ lỗi API để hiển thị chẩn đoán cho thầy Mỹ
+            const [apiError, setApiError] = useState(null);
+
+            const fetchAPI = async (action, data = {}) => {
+                try {
+                    if (GOOGLE_SCRIPT_URL.includes("YOUR_GOOGLE_APPS_SCRIPT")) {
+                        throw new Error("⚠️ CHƯA DÁN LINK GOOGLE SCRIPT! Thầy hãy dán link vào dòng số 24 của file admin.html.");
+                    }
+                    const url = new URL(GOOGLE_SCRIPT_URL);
+                    url.searchParams.append('action', action);
+                    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) });
+                    const text = await res.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch(err) {
+                        console.error("Lỗi Google Script trả về HTML:", text);
+                        throw new Error("⚠️ BỊ GOOGLE TỪ CHỐI TRUY CẬP! (Lỗi 99% do khi Deploy thầy chưa chọn 'Who has access: Bất kỳ ai / Anyone'). Thầy vui lòng vào lại Apps Script -> Manage Deployments -> Chỉnh sửa -> Chọn New version -> Who has access: Anyone -> Deploy.");
+                    }
+                } catch(e) {
+                    console.error("API Error:", e);
+                    throw e;
+                }
+            };
+
             useEffect(() => {
                 if (localStorage.getItem('admin_logged_in') === 'true') {
                     setIsLoggedIn(true);
@@ -170,9 +185,9 @@
 
             const loadAllData = async () => {
                 try {
+                    setApiError(null); // Reset lỗi
                     const [r1, r2, r3] = await Promise.all([ fetchAPI('list'), fetchAPI('history'), fetchAPI('students') ]);
                     
-                    // CHỐNG SẬP TRẮNG MÀN HÌNH: Đảm bảo dữ liệu nhận được luôn là Mảng
                     setDataExams(Array.isArray(r1) ? r1 : []); 
                     setDataHistory(Array.isArray(r2) ? r2 : []); 
                     
@@ -186,7 +201,7 @@
                     if (r1 && r1.error) console.error("Lỗi Google Script:", r1.error);
                     setSelectedScores([]);
                 } catch(e) { 
-                    console.error("Lỗi tải dữ liệu", e); 
+                    setApiError(e.message || "Lỗi mất kết nối với Google Sheets.");
                     setDataExams([]); setDataHistory([]); setDataStudents({classes: [], students: []});
                 }
             };
@@ -367,6 +382,13 @@
                         </div>
                         <button onClick={()=>{localStorage.removeItem('admin_logged_in'); location.reload();}} className="mt-4 md:mt-0 p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center gap-2 font-bold text-xs uppercase"><Icon name="log-out" size={16}/> Đăng xuất</button>
                     </header>
+
+                    {apiError && (
+                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-md">
+                            <p className="font-black flex items-center gap-2"><Icon name="alert-triangle"/> LỖI KẾT NỐI HỆ THỐNG</p>
+                            <p className="mt-2 font-bold">{apiError}</p>
+                        </div>
+                    )}
 
                     <div className="flex flex-wrap gap-2 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-gray-200 inline-flex">
                         {[{id: 'lectures', label: 'Bài Giảng', icon: 'book-open'}, {id: 'exams', label: 'Quản lý Đề', icon: 'file-edit'}, {id: 'students', label: 'Danh sách Lớp', icon: 'users'}, {id: 'scores', label: 'Điểm số', icon: 'bar-chart-2'}].map(t => (
