@@ -49,7 +49,6 @@
             if (!id) { id = 'dev_' + Math.random().toString(36).substr(2, 9); localStorage.setItem('thmy_device_id', id); } return id;
         };
 
-        // Hàm gọi API tới Google Apps Script
         const fetchAPI = async (action, data = {}) => {
             try {
                 const url = new URL(GOOGLE_SCRIPT_URL);
@@ -133,16 +132,20 @@
             };
 
             const fetchHistory = async (info) => {
-                try {
-                    const data = await fetchAPI('history', info);
-                    setHistory(data);
+                try { 
+                    const data = await fetchAPI('history', info); 
+                    setHistory(Array.isArray(data) ? data : []); 
                 } catch(e) {}
             };
 
             useEffect(() => {
                 const savedInfo = localStorage.getItem('thmy_student');
                 if (savedInfo) { const info = JSON.parse(savedInfo); setStudentInfo(info); setView('folders'); fetchHistory(info); }
-                fetchAPI('list').then(data => setExams(data)).catch(e => console.error(e));
+                
+                fetchAPI('list').then(data => {
+                    if (Array.isArray(data)) setExams(data);
+                    else { console.error("Lỗi Google Script:", data); setExams([]); }
+                }).catch(e => console.error(e));
             }, []);
 
             useEffect(() => { if (activeExam && activeExam.type === 'pdf') { localStorage.setItem(`thmy_draft_${activeExam.id}`, JSON.stringify(userAnswers)); } }, [userAnswers, activeExam]);
@@ -157,7 +160,7 @@
 
             useEffect(() => {
                 if (view === 'quiz' && !hasSubmitted && !isSubmitting) {
-                    const isStrict = activeExam?.strictMode !== false;
+                    const isStrict = activeExam?.strictMode !== false; 
                     if (isStrict) {
                         const handleVisibilityChange = () => {
                             if (document.hidden) {
