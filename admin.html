@@ -3,25 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ Thống Toán THPT - Quản trị</title>
+    <title>Quản Trị Hệ Thống Toán THPT</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
-        html { font-size: 110%; }
-        body { background-color: #F8F9FA; font-family: 'Inter', sans-serif; color: #1e293b;}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #F0F4F8; color: #1e293b;}
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
     </style>
-    
-    <script>
-        // DÁN URL GOOGLE APPS SCRIPT VÀO ĐÂY:
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxVbfS60Mta6UucvTcl5z_rl36cM105_dBUOGS8dDtw6YOMQNmOrubAVV2CRlVC_BLGAw/exec"; 
-    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -29,606 +28,281 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        const firebaseConfig = {
+            apiKey: "AIzaSyDvdEgUXxWvC78Q0xkehC99xMQ-oZGzlus",
+            authDomain: "th-my-91ed8.firebaseapp.com",
+            projectId: "th-my-91ed8",
+            storageBucket: "th-my-91ed8.firebasestorage.app",
+            messagingSenderId: "629306856660",
+            appId: "1:629306856660:web:4018efbdbd65ad9aed5741"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+
         const Icon = ({ name, size = 20, className="" }) => {
             const ref = useRef(null);
             useEffect(() => { if (window.lucide) window.lucide.createIcons({ root: ref.current }); }, [name]);
             return <span ref={ref} className={`inline-block ${className}`}><i data-lucide={name} style={{width:size, height:size}}></i></span>;
         };
 
-        const ConfigModal = ({ exam, onSave, onClose }) => {
-            const [tab, setTab] = useState('answers');
-            const [data, setData] = useState({
-                correctAnswers: exam.correctAnswers || { p1: {}, p2: {}, p3: {}, p4: {} },
-                detailedSolutions: exam.detailedSolutions || { p1: {}, p2: {}, p3: {}, p4: {} }
-            });
-
-            const updateAns = (part, q, val, subItem = null) => {
-                const newData = {...data}; if (!newData.correctAnswers[part]) newData.correctAnswers[part] = {};
-                if (part === 'p2' && subItem) { if (!newData.correctAnswers.p2[q]) newData.correctAnswers.p2[q] = {}; newData.correctAnswers.p2[q][subItem] = val; } 
-                else { newData.correctAnswers[part][q] = val; } setData(newData);
-            };
-
-            const renderPart1 = () => (
-                <section className="mb-8"><h3 className="text-red-600 font-black text-sm uppercase mb-4 border-b pb-2">Phần I: Trắc nghiệm</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{Array.from({length: exam.config?.p1 || 0}, (_, i) => i + 1).map(n => (
-                        <div key={n} className="flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-200"><span className="text-xs font-bold w-6">C{n}</span>{['A','B','C','D'].map(c => (
-                            <button key={c} onClick={()=>updateAns('p1', n, c)} className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all ${data.correctAnswers.p1?.[n]===c?'bg-teal-600 text-white border-teal-600':'bg-gray-50 text-gray-400'}`}>{c}</button>
-                        ))}</div>))}
-                    </div>
-                </section>
-            );
-
-            const renderPart2 = () => (
-                <section className="mb-8"><h3 className="text-orange-500 font-black text-sm uppercase mb-4 border-b pb-2">Phần II: Đúng/Sai</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{Array.from({length: exam.config?.p2 || 0}, (_, i) => i + 1).map(n => (
-                        <div key={n} className="bg-white p-3 rounded-xl border border-gray-200 space-y-2"><span className="text-xs font-black block text-gray-500">Câu {n}</span>{['a','b','c','d'].map(sub => (
-                            <div key={sub} className="flex items-center justify-between bg-gray-50 p-2 rounded border"><span className="font-bold text-sm ml-2">{sub})</span>
-                                <div className="flex gap-2">
-                                    <button onClick={()=>updateAns('p2', n, 'D', sub)} className={`px-4 py-1 rounded font-bold text-xs ${data.correctAnswers.p2?.[n]?.[sub]==='D'?'bg-teal-600 text-white':'bg-white text-gray-400 border'}`}>Đúng</button>
-                                    <button onClick={()=>updateAns('p2', n, 'S', sub)} className={`px-4 py-1 rounded font-bold text-xs ${data.correctAnswers.p2?.[n]?.[sub]==='S'?'bg-red-600 text-white':'bg-white text-gray-400 border'}`}>Sai</button>
-                                </div>
-                            </div>))}
-                        </div>))}
-                    </div>
-                </section>
-            );
-
-            const renderPart34 = (partKey, title) => (
-                <section className="mb-8"><h3 className="text-blue-900 font-black text-sm uppercase mb-4 border-b pb-2">{title}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{Array.from({length: exam.config?.[partKey] || 0}, (_, i) => i + 1).map(n => (
-                        <div key={n} className="flex items-center gap-4 bg-white p-3 rounded-xl border border-gray-200"><span className="text-xs font-bold w-10 text-gray-500">Câu {n}</span>
-                            <input type="text" value={data.correctAnswers[partKey]?.[n] || ''} onChange={e=>updateAns(partKey, n, e.target.value)} className="flex-1 border border-gray-300 rounded-lg p-2 text-sm font-bold outline-none focus:border-blue-500" placeholder="Nhập đáp án chuẩn..." />
-                        </div>))}
-                    </div>
-                </section>
-            );
-
-            return (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white w-full max-w-5xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="p-6 border-b flex justify-between items-center bg-gray-50">
-                            <div><h2 className="text-xl font-black text-gray-800">CẤU HÌNH ĐỀ: {exam.title}</h2></div>
-                            <div className="flex bg-gray-200 rounded-xl p-1">
-                                <button onClick={()=>setTab('answers')} className={`px-6 py-2 rounded-lg text-xs font-bold uppercase transition-all ${tab==='answers'?'bg-white text-red-600 shadow-sm':'text-gray-500'}`}>Đáp án chuẩn</button>
-                                <button onClick={()=>setTab('solutions')} className={`px-6 py-2 rounded-lg text-xs font-bold uppercase transition-all ${tab==='solutions'?'bg-white text-teal-600 shadow-sm':'text-gray-500'}`}>Giải chi tiết</button>
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gray-50">
-                            {tab === 'answers' ? ( <div>{renderPart1()}{renderPart2()}{renderPart34('p3', 'Phần III: Trả lời ngắn')}{renderPart34('p4', 'Phần IV: Tự luận (Trả lời ngắn)')}</div> ) : (
-                                <div className="space-y-6"><div className="bg-blue-50 text-blue-900 p-3 rounded-xl text-xs font-bold mb-4 flex items-center gap-2"><Icon name="info" size={16}/> Thầy nhập lời giải. Hỗ trợ mã LaTeX.</div>
-                                    {['p1', 'p2', 'p3', 'p4'].map(part => {
-                                        const count = exam.config?.[part] || 0; if (count === 0) return null;
-                                        return (
-                                            <div key={part} className="space-y-4 mb-8"><h4 className="font-black text-gray-600 uppercase border-b pb-2">Giải chi tiết - Phần {part.toUpperCase()}</h4>
-                                                {Array.from({length: count}, (_, i) => i + 1).map(n => (
-                                                    <div key={`${part}_${n}`} className="bg-white p-4 rounded-xl border border-gray-200"><label className="block text-xs font-bold text-teal-600 mb-2">Câu {n}</label>
-                                                        <textarea value={data.detailedSolutions[part]?.[n] || ''} onChange={e=> {
-                                                            const newData = {...data}; if(!newData.detailedSolutions[part]) newData.detailedSolutions[part] = {};
-                                                            newData.detailedSolutions[part][n] = e.target.value; setData(newData);
-                                                        }} className="w-full h-20 p-3 rounded-lg border-2 border-gray-100 text-sm outline-none focus:border-teal-400" placeholder="Nhập lời giải chi tiết..."></textarea>
-                                                    </div>))}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 shrink-0">
-                            <button onClick={onClose} className="px-6 py-3 font-bold text-gray-500 hover:text-gray-800 uppercase text-xs">Đóng</button>
-                            <button onClick={()=>onSave(data)} className="px-10 py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-black shadow-lg uppercase text-xs tracking-widest transition-all">LƯU CẤU HÌNH</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
         const App = () => {
             const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [activeTab, setActiveTab] = useState('lectures');
+            const [activeTab, setActiveTab] = useState('students');
             
-            const [activeExamCat, setActiveExamCat] = useState('toan_10');
-            const [activeLectureCat, setActiveLectureCat] = useState('toan_10');
-
             const [dataExams, setDataExams] = useState([]);
             const [dataStudents, setDataStudents] = useState({classes: [], students: []});
             const [dataHistory, setDataHistory] = useState([]);
             
-            const [editingExam, setEditingExam] = useState(null);
-            const [uploading, setUploading] = useState(false);
-            const [selectedType, setSelectedType] = useState('pdf');
-            const [showUploadMobile, setShowUploadMobile] = useState(false); 
-
             const [newClass, setNewClass] = useState('');
             const [activeClassTab, setActiveClassTab] = useState('');
             const fileExcelRef = useRef(null);
-
-            const [scoreFilter, setScoreFilter] = useState({ class: '', studentName: '', examId: '' });
-            const [scoreViewType, setScoreViewType] = useState('list');
-            const [selectedScores, setSelectedScores] = useState([]);
-
-            const [uploadCategory, setUploadCategory] = useState('toan_10');
-            const [uploadSubCategory, setUploadSubCategory] = useState('ly_thuyet');
-            const [uploadTitle, setUploadTitle] = useState('');
             
-            const [fileUrl, setFileUrl] = useState('');
-
-            // State lưu trữ lỗi API để hiển thị chẩn đoán cho thầy Mỹ
-            const [apiError, setApiError] = useState(null);
-
-            const fetchAPI = async (action, data = {}) => {
-                try {
-                    if (GOOGLE_SCRIPT_URL.includes("YOUR_GOOGLE_APPS_SCRIPT")) {
-                        throw new Error("⚠️ CHƯA DÁN LINK GOOGLE SCRIPT! Thầy hãy dán link vào dòng số 24 của file admin.html.");
-                    }
-                    const url = new URL(GOOGLE_SCRIPT_URL);
-                    url.searchParams.append('action', action);
-                    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(data) });
-                    const text = await res.text();
-                    try {
-                        return JSON.parse(text);
-                    } catch(err) {
-                        console.error("Lỗi Google Script trả về HTML:", text);
-                        throw new Error("⚠️ BỊ GOOGLE TỪ CHỐI TRUY CẬP! (Lỗi 99% do khi Deploy thầy chưa chọn 'Who has access: Bất kỳ ai / Anyone'). Thầy vui lòng vào lại Apps Script -> Manage Deployments -> Chỉnh sửa -> Chọn New version -> Who has access: Anyone -> Deploy.");
-                    }
-                } catch(e) {
-                    console.error("API Error:", e);
-                    throw e;
-                }
-            };
+            // Sync states
+            const [gasUrl, setGasUrl] = useState(localStorage.getItem('gas_sync_url') || '');
+            const [isSyncing, setIsSyncing] = useState(false);
 
             useEffect(() => {
-                if (localStorage.getItem('admin_logged_in') === 'true') {
-                    setIsLoggedIn(true);
-                    loadAllData();
-                }
+                const savedLogin = localStorage.getItem('thmy_admin_login');
+                if (savedLogin === 'true') { setIsLoggedIn(true); }
             }, []);
 
-            const loadAllData = async () => {
-                try {
-                    setApiError(null); // Reset lỗi
-                    const [r1, r2, r3] = await Promise.all([ fetchAPI('list'), fetchAPI('history'), fetchAPI('students') ]);
-                    
-                    setDataExams(Array.isArray(r1) ? r1 : []); 
-                    setDataHistory(Array.isArray(r2) ? r2 : []); 
-                    
-                    if (r3 && Array.isArray(r3.classes)) {
-                        setDataStudents(r3);
-                        if (r3.classes.length > 0 && !activeClassTab) setActiveClassTab(r3.classes[0]); 
-                    } else {
-                        setDataStudents({classes: [], students: []});
-                    }
-                    
-                    if (r1 && r1.error) console.error("Lỗi Google Script:", r1.error);
-                    setSelectedScores([]);
-                } catch(e) { 
-                    setApiError(e.message || "Lỗi mất kết nối với Google Sheets.");
-                    setDataExams([]); setDataHistory([]); setDataStudents({classes: [], students: []});
-                }
-            };
+            // Fix lỗi lồng listener bằng cách tách bạch các subscriptions
+            useEffect(() => {
+                if (!isLoggedIn) return;
 
-            const handleUpload = async (e) => {
-                e.preventDefault();
-                if (!fileUrl.trim()) { alert('Vui lòng nhập đường dẫn file!'); return; }
+                const unsubClasses = db.collection("classes").onSnapshot(snap => {
+                    const classes = snap.docs.map(doc => doc.id).sort();
+                    setDataStudents(prev => ({ ...prev, classes }));
+                    if (classes.length > 0 && !activeClassTab) setActiveClassTab(classes[0]);
+                });
 
-                const fd = new FormData(e.target);
-                const config = {
-                    p1: Math.min(24, parseInt(fd.get('p1')||0)), p2: Math.min(4, parseInt(fd.get('p2')||0)),
-                    p3: Math.min(6, parseInt(fd.get('p3')||0)), p4: Math.min(4, parseInt(fd.get('p4')||0))
-                };
-                
-                const uploadData = {
-                    id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-                    title: uploadTitle || "Chưa có tên",
-                    mainType: activeTab === 'lectures' ? 'lecture' : 'exam',
-                    category: activeTab === 'lectures' ? activeLectureCat : uploadCategory,
-                    subCategory: fd.get('subCategory'),
-                    chapter: fd.get('chapter'),
-                    lesson: fd.get('lesson'),
-                    timeLimit: fd.get('timeLimit'),
-                    config: config,
-                    fileUrl: fileUrl,
-                    filePath: fileUrl,
-                    type: selectedType,
-                    visible: true, showAnswers: true, recordScore: true, strictMode: true
-                };
+                const unsubStudents = db.collection("students").onSnapshot(snap => {
+                    const students = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setDataStudents(prev => ({ ...prev, students }));
+                });
 
-                setUploading(true);
-                try {
-                    const data = await fetchAPI('upload', uploadData);
-                    if (data && data.success) { 
-                        e.target.reset(); setUploadTitle(''); setFileUrl(''); setSelectedType('pdf'); loadAllData(); alert('Đã thêm bài mới thành công!'); setShowUploadMobile(false);
-                    } else { alert('LỖI: ' + (data?.message || data?.error || 'Không rõ')); }
-                } catch(err) { alert('Lỗi kết nối tới Google Sheets!'); }
-                setUploading(false);
-            };
+                const unsubExams = db.collection("exams").onSnapshot(snap => {
+                    setDataExams(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+
+                const unsubHistory = db.collection("history").onSnapshot(snap => {
+                    setDataHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+
+                return () => { unsubClasses(); unsubStudents(); unsubExams(); unsubHistory(); };
+            }, [isLoggedIn]);
 
             const handleAddClass = async () => {
                 if(!newClass) return;
-                await fetchAPI('add_class', {className: newClass}); setNewClass(''); loadAllData();
+                const className = newClass.toUpperCase().trim();
+                await db.collection("classes").doc(className).set({ created: true });
+                setNewClass('');
             };
 
             const handleDeleteClass = async (className) => {
-                if(confirm(`Xóa toàn bộ lớp ${className} và danh sách học sinh?`)) {
-                    await fetchAPI('delete_class', {name: className});
-                    if (activeClassTab === className) setActiveClassTab(''); loadAllData();
+                if(confirm(`Xóa toàn bộ lớp ${className}?`)) {
+                    await db.collection("classes").doc(className).delete();
+                    const batch = db.batch();
+                    const students = dataStudents.students.filter(s => s.class === className);
+                    students.forEach(s => batch.delete(db.collection("students").doc(s.id)));
+                    await batch.commit();
+                    if(activeClassTab === className) setActiveClassTab('');
                 }
             };
 
             const handleAddSingleStudent = async (e) => {
-                e.preventDefault(); const fd = new FormData(e.target);
-                const data = await fetchAPI('add_student', {name: fd.get('name'), class: activeClassTab});
-                if(data && data.success) { e.target.reset(); loadAllData(); } else alert(data?.message || 'Lỗi');
+                e.preventDefault();
+                if(!activeClassTab) { alert("Vui lòng chọn hoặc tạo lớp trước!"); return; }
+                const name = e.target.name.value.trim();
+                const studentId = btoa(unescape(encodeURIComponent(name.toLowerCase() + "_" + activeClassTab)));
+                await db.collection("students").doc(studentId).set({
+                    name, class: activeClassTab, maxDevices: 1, devices: []
+                });
+                e.target.reset();
             };
 
-            const handleExcelImport = (e) => {
-                const file = e.target.files[0]; if (!file || !activeClassTab) return; const reader = new FileReader();
-                reader.onload = async (evt) => {
-                    const bstr = evt.target.result; const wb = XLSX.read(bstr, {type:'binary'}); const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header: 1});
-                    let students = [];
-                    for(let i=0; i<data.length; i++) { let row = data[i]; if (row.length > 0 && typeof row[0] === 'string' && row[0].toLowerCase() !== 'họ và tên') students.push(row[0]); }
-                    if(students.length > 0) {
-                        await fetchAPI('import_students', {class: activeClassTab, students});
-                        loadAllData(); alert(`Đã thêm ${students.length} học sinh.`);
+            const handleSyncSheets = async () => {
+                if (!gasUrl) { alert("https://script.google.com/macros/s/AKfycbxyhvff1gcsE5DVcra1R0Dm1YFwEO6vYMzu_qCUTovWwZaYnLKkIRPxAktD6H0mpyJb/exec"); return; }
+                localStorage.setItem('gas_sync_url', gasUrl);
+                setIsSyncing(true);
+                
+                try {
+                    const payload = {
+                        action: "sync",
+                        students: dataStudents.students.map(s => ({
+                            id: s.id, name: s.name, class: s.class, maxDevices: s.maxDevices
+                        }))
+                    };
+
+                    const response = await fetch(gasUrl, {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' } 
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.status === "success") {
+                        const batch = db.batch();
+                        // Tạo class missing nếu có từ Excel
+                        const sheetClasses = [...new Set(result.students.map(s => s.class))];
+                        sheetClasses.forEach(c => {
+                            if (!dataStudents.classes.includes(c)) {
+                                batch.set(db.collection("classes").doc(c), { created: true });
+                            }
+                        });
+
+                        // Cập nhật lại db Firebase từ Sheets 
+                        result.students.forEach(s => {
+                            const studentRef = db.collection("students").doc(s.id);
+                            batch.set(studentRef, {
+                                name: s.name, class: s.class, maxDevices: s.maxDevices, devices: []
+                            }, { merge: true });
+                        });
+                        
+                        await batch.commit();
+                        alert("Đồng bộ Google Sheets thành công!");
                     }
-                    if (fileExcelRef.current) fileExcelRef.current.value = '';
-                }; reader.readAsBinaryString(file);
-            };
-
-            const handleDeleteScores = async (deleteAllInExam = false) => {
-                if(deleteAllInExam) {
-                    if(!scoreFilter.examId) return alert("Chọn bài kiểm tra ở bộ lọc để xóa!");
-                    if(confirm(`Xóa VĨNH VIỄN toàn bộ điểm bài này?`)) { await fetchAPI('delete_scores', {examId: scoreFilter.examId}); loadAllData(); }
-                } else {
-                    if(selectedScores.length === 0) return;
-                    if(confirm(`Xóa vĩnh viễn ${selectedScores.length} điểm đã chọn?`)) { await fetchAPI('delete_scores', {times: selectedScores}); loadAllData(); }
+                } catch (error) {
+                    console.error(error);
+                    alert("Lỗi đồng bộ. Hãy kiểm tra lại URL và quyền truy cập.");
+                } finally {
+                    setIsSyncing(false);
                 }
             };
 
             if (!isLoggedIn) return (
-                <div className="h-screen flex items-center justify-center bg-gray-100">
-                    <form onSubmit={async (e) => {
+                <div className="h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <form onSubmit={(e) => {
                         e.preventDefault();
-                        if (e.target.u.value === 'thmy' && e.target.p.value === 'Mit123456') { 
-                            localStorage.setItem('admin_logged_in', 'true'); setIsLoggedIn(true); loadAllData(); 
-                        } else { alert('Sai tài khoản hoặc mật khẩu!'); }
-                    }} className="bg-white p-10 rounded-[3rem] shadow-xl w-full max-w-sm text-center">
-                        <div className="w-20 h-20 bg-blue-900 rounded-3xl mx-auto mb-6 flex items-center justify-center text-white"><Icon name="shield" size={40}/></div>
-                        <h2 className="font-black uppercase mb-2 tracking-tighter text-gray-800 text-2xl">QUẢN TRỊ VIÊN</h2>
-                        <input name="u" type="text" placeholder="Tên đăng nhập" className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl mb-3 outline-none focus:border-blue-500" required/>
-                        <input name="p" type="password" placeholder="Mật khẩu" className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl mb-6 outline-none focus:border-blue-500" required/>
-                        <button className="w-full py-4 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-black uppercase tracking-widest transition-all">ĐĂNG NHẬP ADMIN</button>
+                        if (e.target.u.value === 'thmy' && e.target.p.value === 'Mit123456') {
+                            setIsLoggedIn(true); localStorage.setItem('thmy_admin_login', 'true');
+                        } else alert("Sai tài khoản!");
+                    }} className="glass-panel p-10 rounded-[2.5rem] shadow-2xl w-full max-w-sm text-center border-t border-white">
+                        <div className="w-20 h-20 bg-teal-600 rounded-[1.5rem] mx-auto mb-6 flex items-center justify-center text-white shadow-lg"><Icon name="shield-check" size={40}/></div>
+                        <h2 className="font-black uppercase mb-8 tracking-tight text-slate-800 text-2xl">BẢNG ĐIỀU KHIỂN</h2>
+                        <input name="u" type="text" placeholder="Tên đăng nhập" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-4 outline-none focus:border-teal-500 transition-all font-medium text-sm" required/>
+                        <input name="p" type="password" placeholder="Mật khẩu" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl mb-8 outline-none focus:border-teal-500 transition-all font-medium text-sm" required/>
+                        <button className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold uppercase tracking-wide transition-all shadow-xl hover:shadow-none text-sm">ĐĂNG NHẬP</button>
                     </form>
                 </div>
             );
 
-            const subCatNames = {
-                'ly_thuyet': 'Lý thuyết', 'bai_tap': 'Bài tập', 'bai_tap_chuong': 'Bài tập theo chương', 'on_dinh_ki': 'Bài ôn định kì', 'kiem_tra': 'Bài kiểm tra',
-                'on_chu_de': 'Ôn tập theo chủ đề', 'tn_lua_chon': 'Trắc nghiệm lựa chọn', 'tn_dung_sai': 'Trắc nghiệm đúng sai', 'tn_ngan': 'Trả lời ngắn', 'de_tong_on': 'Đề tổng ôn'
-            };
-
-            const renderDocsList = (mainType) => {
-                let docs = dataExams.filter(e => e.mainType === mainType);
-                if (mainType === 'exam') docs = docs.filter(e => e.category === activeExamCat);
-                if (mainType === 'lecture') docs = docs.filter(e => e.category === activeLectureCat);
-                
-                const grouped = {};
-                docs.forEach(e => { 
-                    let catName = subCatNames[e.subCategory] || e.subCategory;
-                    if(!grouped[catName]) grouped[catName] = [];
-                    grouped[catName].push(e); 
-                });
-
-                return (
-                    <div className="space-y-6">
-                        <div className="flex gap-2 mb-4 bg-white p-2 rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-                            {[ {id:'toan_10', n:'Toán 10'}, {id:'toan_11', n:'Toán 11'}, {id:'toan_12', n:'Toán 12'}, {id:'thqg', n:'Ôn thi THQG'} ].map(c => (
-                                <button key={c.id} onClick={()=>{
-                                    if(mainType === 'exam') setActiveExamCat(c.id); else setActiveLectureCat(c.id);
-                                }} className={`px-4 py-2 rounded-lg font-black text-xs uppercase whitespace-nowrap transition-all ${(mainType==='exam'?activeExamCat:activeLectureCat)===c.id?'bg-blue-900 text-white':'text-gray-500 hover:bg-gray-100'}`}>{c.n}</button>
-                            ))}
-                        </div>
-
-                        {Object.keys(grouped).map(catKey => (
-                            <div key={catKey} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-                                <h3 className="font-black text-teal-600 text-lg uppercase mb-4 border-b pb-2 flex items-center gap-2"><Icon name="folder" size={20}/> {catKey}</h3>
-                                <div className="flex flex-col gap-3 mt-2">
-                                    {grouped[catKey].sort((a,b) => (a.lesson||'').localeCompare(b.lesson||'')).map(e => (
-                                        <div key={e.id} className={`bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col xl:flex-row xl:items-center justify-between transition-all gap-4 ${e.visible?'hover:border-teal-300':'opacity-60 border-dashed'}`}>
-                                            <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 ${e.type==='pdf'?'bg-red-500':'bg-orange-500'}`}><Icon name="file-text" size={20}/></div>
-                                                <div className="flex-1">
-                                                    <h5 className="font-bold text-gray-800 text-sm break-words">{e.chapter ? `[${e.chapter}] ` : ''}{e.lesson ? `[${e.lesson}] ` : ''}{e.title}</h5>
-                                                    <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">Định dạng: {e.type} {e.config?.timeLimit ? `• ${e.config.timeLimit} Phút` : ''}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 items-center shrink-0 border-t xl:border-0 pt-3 xl:pt-0 border-gray-100 w-full xl:w-auto justify-end">
-                                                
-                                                {mainType === 'exam' && <button onClick={async ()=>{ await fetchAPI('toggle_prop', {id: e.id, recordScore: !e.recordScore}); loadAllData(); 
-                                                }} className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all ${e.recordScore!==false?'bg-orange-100 text-orange-600':'bg-gray-200 text-gray-500'}`} title="Tính điểm / Không tính điểm">{e.recordScore!==false ? 'Bật Điểm' : 'Tắt Điểm'}</button>}
-
-                                                <button onClick={async ()=>{ await fetchAPI('toggle_prop', {id: e.id, visible: !e.visible}); loadAllData(); 
-                                                }} className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all ${e.visible?'bg-teal-50 text-teal-600 border border-teal-100':'bg-gray-100 text-gray-500'}`}>{e.visible ? 'Đang Mở' : 'Đã Ẩn'}</button>
-                                                
-                                                {mainType === 'lecture' && <a href={e.filePath || e.fileUrl} target="_blank" className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg font-bold text-[10px] uppercase hover:bg-blue-600 hover:text-white transition-all">Xem</a>}
-                                                <a href={e.filePath || e.fileUrl} download className="px-3 py-1.5 bg-gray-100 text-gray-600 border border-gray-200 rounded-lg font-bold text-[10px] uppercase hover:bg-gray-600 hover:text-white transition-all flex items-center gap-1"><Icon name="download" size={14}/> Tải</a>
-                                                
-                                                {mainType === 'exam' && e.type === 'pdf' && <button onClick={()=>setEditingExam(e)} className="px-3 py-1.5 bg-white text-teal-600 border border-teal-200 rounded-lg font-bold text-[10px] uppercase hover:bg-teal-600 hover:text-white transition-all">Cấu hình</button>}
-                                                
-                                                {mainType === 'exam' && <button onClick={async ()=>{ await fetchAPI('toggle_prop', {id: e.id, showAnswers: !e.showAnswers}); loadAllData(); 
-                                                }} className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all ${e.showAnswers?'bg-blue-50 text-blue-600 border border-blue-100':'bg-red-50 text-red-600 border border-red-100'}`} title="Tắt tính năng xem đáp án và tự văng ra ngoài sau khi nộp">{e.showAnswers ? 'Mở Đ.Án' : 'Khóa Đ.Án'}</button>}
-                                                
-                                                {mainType === 'exam' && <button onClick={async ()=>{ await fetchAPI('toggle_prop', {id: e.id, strictMode: e.strictMode === false ? true : false}); loadAllData(); 
-                                                }} className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all ${e.strictMode!==false?'bg-purple-50 text-purple-600 border border-purple-100':'bg-gray-100 text-gray-500'}`} title="Bật/Tắt chống gian lận thoát Tab">{e.strictMode!==false ? 'Giám sát: Bật' : 'Giám sát: Tắt'}</button>}
-
-                                                <button onClick={async ()=>{if(confirm('Xóa tài liệu này?')){await fetchAPI('delete_exam', {id: e.id}); loadAllData();}}} className="p-1.5 bg-red-50 text-red-600 border border-red-100 rounded-lg hover:bg-red-600 hover:text-white transition-all"><Icon name="trash-2" size={14}/></button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                        {docs.length === 0 && <p className="text-center text-gray-400 py-10 font-bold">Chưa có tài liệu nào.</p>}
-                    </div>
-                );
-            };
-
             return (
-                <div className="p-8 max-w-7xl mx-auto">
-                    <header className="mb-10 text-center md:text-left flex flex-col md:flex-row justify-between items-center border-b-4 border-blue-900 pb-6">
+                <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
+                    <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
                         <div>
-                            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter text-blue-900 leading-tight">HỆ THỐNG TOÁN THPT</h1>
-                            <p className="text-teal-600 font-black text-sm uppercase tracking-widest mt-1">Trường THPT Bùi Thị Xuân - Mũi Né</p>
-                            <p className="text-gray-500 font-bold text-xs uppercase mt-1 flex items-center gap-1 justify-center md:justify-start"><Icon name="user" size={14}/> Gv: Ngô Trung Mỹ</p>
+                            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-slate-800">Workspace Quản Trị</h1>
+                            <p className="text-teal-600 font-bold text-xs uppercase tracking-widest mt-1">THPT Bùi Thị Xuân - Mũi Né</p>
                         </div>
-                        <button onClick={()=>{localStorage.removeItem('admin_logged_in'); location.reload();}} className="mt-4 md:mt-0 p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center gap-2 font-bold text-xs uppercase"><Icon name="log-out" size={16}/> Đăng xuất</button>
+                        <div className="mt-4 md:mt-0 flex gap-2">
+                            <button onClick={()=>{localStorage.removeItem('thmy_admin_login'); setIsLoggedIn(false);}} className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-rose-100 transition-colors"><Icon name="log-out" size={16}/> Đăng xuất</button>
+                        </div>
                     </header>
 
-                    {apiError && (
-                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-md">
-                            <p className="font-black flex items-center gap-2"><Icon name="alert-triangle"/> LỖI KẾT NỐI HỆ THỐNG</p>
-                            <p className="mt-2 font-bold">{apiError}</p>
-                        </div>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-gray-200 inline-flex">
-                        {[{id: 'lectures', label: 'Bài Giảng', icon: 'book-open'}, {id: 'exams', label: 'Quản lý Đề', icon: 'file-edit'}, {id: 'students', label: 'Danh sách Lớp', icon: 'users'}, {id: 'scores', label: 'Điểm số', icon: 'bar-chart-2'}].map(t => (
-                            <button key={t.id} onClick={()=>setActiveTab(t.id)} className={`px-6 py-3 rounded-xl font-black text-xs uppercase flex items-center gap-2 transition-all ${activeTab===t.id?'bg-blue-900 text-white shadow-lg':'text-gray-500 hover:bg-gray-100'}`}><Icon name={t.icon} size={16}/> {t.label}</button>
+                    <div className="flex gap-2 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 overflow-x-auto custom-scrollbar">
+                        {[{id: 'students', label: 'Quản Lý Học Sinh', icon: 'users'}, {id: 'exams', label: 'Tài Liệu & Đề', icon: 'folder-open'}].map(t => (
+                            <button key={t.id} onClick={()=>setActiveTab(t.id)} className={`px-6 py-3 rounded-xl font-bold text-xs uppercase flex items-center gap-2 transition-all whitespace-nowrap ${activeTab===t.id?'bg-teal-600 text-white shadow-md':'text-slate-500 hover:bg-slate-50'}`}><Icon name={t.icon} size={16}/> {t.label}</button>
                         ))}
                     </div>
 
-                    {(activeTab === 'exams' || activeTab === 'lectures') && (
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                            <div className="xl:hidden">
-                                <button onClick={() => setShowUploadMobile(!showUploadMobile)} className="w-full py-3 bg-teal-50 text-teal-700 border border-teal-200 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-2 shadow-sm">
-                                    <Icon name={showUploadMobile ? "chevron-up" : "chevron-down"} size={16}/> 
-                                    {showUploadMobile ? 'Ẩn Form Thêm Tài Liệu' : 'Mở Form Thêm Tài Liệu'}
-                                </button>
-                            </div>
-                            
-                            <form onSubmit={handleUpload} className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-200 h-fit sticky top-8 ${showUploadMobile ? 'block' : 'hidden xl:block'}`}>
-                                <h2 className="font-black uppercase text-sm mb-6 flex items-center gap-2 text-teal-600"><Icon name="upload-cloud"/> Thêm {activeTab === 'exams' ? 'Đề' : 'Bài Giảng'} Mới</h2>
-                                <div className="space-y-4">
-                                    <input name="title" type="text" value={uploadTitle} onChange={(e)=>setUploadTitle(e.target.value)} placeholder="Nhập tiêu đề" className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-sm outline-none focus:border-teal-500"/>
-                                    
-                                    {activeTab === 'exams' ? (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <select name="category" value={uploadCategory} onChange={e=>setUploadCategory(e.target.value)} className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500">
-                                                <option value="toan_10">Toán 10</option> <option value="toan_11">Toán 11</option> <option value="toan_12">Toán 12</option> <option value="thqg">Toán 12 - THQG</option>
-                                            </select>
-                                            <select name="subCategory" value={uploadSubCategory} onChange={e=>setUploadSubCategory(e.target.value)} className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500">
-                                                {uploadCategory === 'thqg' ? (
-                                                    <><option value="ly_thuyet">Lý thuyết</option><option value="on_chu_de">Ôn tập theo chủ đề</option><option value="tn_lua_chon">Trắc nghiệm lựa chọn</option><option value="tn_dung_sai">Trắc nghiệm đúng sai</option><option value="tn_ngan">Trả lời ngắn</option><option value="de_tong_on">Đề tổng ôn</option></>
-                                                ) : (
-                                                    <><option value="ly_thuyet">Lý thuyết</option><option value="bai_tap_chuong">Bài tập theo chương</option><option value="on_dinh_ki">Bài ôn định kì</option><option value="kiem_tra">Bài kiểm tra</option></>
-                                                )}
-                                            </select>
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-1 gap-3">
-                                            <select name="subCategory" className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500">
-                                                <option value="ly_thuyet">LÝ THUYẾT</option>
-                                                <option value="bai_tap">BÀI TẬP</option>
-                                            </select>
-                                        </div>
-                                    )}
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input name="chapter" type="text" placeholder="Chương (VD: Chương 1)" className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500"/>
-                                        <input name="lesson" type="text" placeholder="Bài (VD: Bài 1)" className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500"/>
-                                    </div>
-
-                                    {activeTab === 'exams' && (
-                                        <div><input name="timeLimit" type="number" min="1" placeholder="Thời lượng làm bài (Phút)" className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-xs outline-none focus:border-teal-500"/></div>
-                                    )}
-
-                                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                                        <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">Đường dẫn hoặc Tên file</label>
-                                        <input type="text" value={fileUrl} onChange={e=>setFileUrl(e.target.value)} placeholder="Nhập đường dẫn trên GitHub (vd: dethi/kiemtra1.pdf)" className="w-full p-3 bg-white border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500 mb-3"/>
-                                        <select value={selectedType} onChange={e=>setSelectedType(e.target.value)} className="w-full p-2 bg-white border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500">
-                                            <option value="pdf">Định dạng file: PDF</option>
-                                            <option value="html">Định dạng file: HTML</option>
-                                        </select>
-                                    </div>
-                                    
-                                    {selectedType === 'pdf' && activeTab === 'exams' && (
-                                        <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
-                                            <label className="block text-[10px] font-black text-yellow-700 mb-3 uppercase">Cấu trúc đề (Nhập số câu)</label>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div><span className="text-[10px] font-bold">P1 (Lựa chọn):</span><input name="p1" type="number" max="24" min="0" defaultValue="12" className="w-full p-2 mt-1 rounded border text-xs outline-none focus:border-teal-500"/></div>
-                                                <div><span className="text-[10px] font-bold">P2 (Đúng/Sai):</span><input name="p2" type="number" max="4" min="0" defaultValue="4" className="w-full p-2 mt-1 rounded border text-xs outline-none focus:border-teal-500"/></div>
-                                                <div><span className="text-[10px] font-bold">P3 (Trả lời ngắn):</span><input name="p3" type="number" max="6" min="0" defaultValue="6" className="w-full p-2 mt-1 rounded border text-xs outline-none focus:border-teal-500"/></div>
-                                                <div><span className="text-[10px] font-bold">P4 (Tự Luận):</span><input name="p4" type="number" max="4" min="0" defaultValue="0" className="w-full p-2 mt-1 rounded border text-xs outline-none focus:border-teal-500"/></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                    <button disabled={uploading} className="w-full py-4 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg">{uploading ? 'ĐANG LƯU DỮ LIỆU...' : `LƯU LÊN HỆ THỐNG`}</button>
-                                </div>
-                            </form>
-                            <div className="xl:col-span-2">{renderDocsList(activeTab === 'exams' ? 'exam' : 'lecture')}</div>
-                        </div>
-                    )}
-
                     {activeTab === 'students' && (
-                        <div className="flex flex-col md:flex-row gap-6 items-start">
-                            <div className="w-full md:w-72 shrink-0 bg-white p-4 rounded-3xl shadow-sm border border-gray-200">
-                                <h3 className="font-black text-xs uppercase text-gray-500 mb-4 tracking-widest pl-2">Danh sách Lớp</h3>
-                                <div className="space-y-1 mb-4 max-h-96 overflow-y-auto custom-scrollbar">
-                                    {dataStudents.classes.sort().map(c => (
-                                        <div key={c} className={`flex items-center justify-between rounded-xl transition-all ${activeClassTab===c?'bg-blue-50 border-blue-200 border':'hover:bg-gray-50'}`}>
-                                            <button onClick={()=>setActiveClassTab(c)} className={`flex-1 text-left px-4 py-3 font-black text-sm ${activeClassTab===c?'text-blue-900':'text-gray-600'}`}><Icon name="users" size={16} className="mr-2 inline -mt-1"/> {c}</button>
-                                            <button onClick={()=>handleDeleteClass(c)} className="p-2 text-red-400 hover:text-red-600 mr-2"><Icon name="trash-2" size={16}/></button>
-                                        </div>
-                                    ))}
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="w-full lg:w-80 shrink-0 flex flex-col gap-6">
+                                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                                    <h3 className="font-black text-xs uppercase text-slate-400 mb-4 flex items-center gap-2"><Icon name="layout-list" size={16}/> Danh sách Lớp</h3>
+                                    <div className="space-y-1 mb-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                                        {dataStudents.classes.map(c => (
+                                            <div key={c} className={`flex items-center justify-between rounded-xl transition-all ${activeClassTab===c?'bg-teal-50 border border-teal-100':'hover:bg-slate-50'}`}>
+                                                <button onClick={()=>setActiveClassTab(c)} className={`flex-1 text-left px-4 py-3 font-bold text-sm ${activeClassTab===c?'text-teal-700':'text-slate-600'}`}>{c}</button>
+                                                <button onClick={()=>handleDeleteClass(c)} className="p-3 text-rose-400 hover:text-rose-600 transition-colors"><Icon name="trash-2" size={16}/></button>
+                                            </div>
+                                        ))}
+                                        {dataStudents.classes.length === 0 && <div className="text-xs text-slate-400 italic text-center py-4">Chưa có lớp nào</div>}
+                                    </div>
+                                    <div className="pt-4 border-t border-slate-100 flex gap-2">
+                                        <input type="text" placeholder="Nhập tên lớp mới..." value={newClass} onChange={e=>setNewClass(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold uppercase outline-none focus:border-teal-500 transition-all" />
+                                        <button onClick={handleAddClass} className="bg-slate-800 hover:bg-slate-900 text-white p-3 rounded-xl font-black transition-colors"><Icon name="plus" size={18}/></button>
+                                    </div>
                                 </div>
-                                <div className="pt-4 border-t border-gray-100 flex gap-2">
-                                    <input type="text" placeholder="Tên lớp mới..." value={newClass} onChange={e=>setNewClass(e.target.value)} className="w-full bg-gray-50 border p-2 rounded-lg text-xs font-bold outline-none uppercase" />
-                                    <button onClick={handleAddClass} className="bg-teal-100 text-teal-600 p-2 rounded-lg hover:bg-teal-600 hover:text-white font-black"><Icon name="plus" size={16}/></button>
+
+                                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                                    <h3 className="font-black text-xs uppercase text-slate-400 mb-4 flex items-center gap-2"><Icon name="refresh-cw" size={16}/> Đồng Bộ Google Sheets</h3>
+                                    <input type="text" placeholder="Dán Web App URL vào đây..." value={gasUrl} onChange={e=>setGasUrl(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-medium outline-none focus:border-teal-500 transition-all mb-3" />
+                                    <button onClick={handleSyncSheets} disabled={isSyncing} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold uppercase text-xs shadow-md transition-all flex items-center justify-center gap-2">
+                                        {isSyncing ? <Icon name="loader" className="animate-spin" size={16}/> : <Icon name="upload-cloud" size={16}/>}
+                                        {isSyncing ? 'Đang đồng bộ...' : 'Bắt đầu đồng bộ'}
+                                    </button>
                                 </div>
                             </div>
-                            <div className="flex-1 w-full bg-white p-6 rounded-3xl shadow-sm border border-gray-200 overflow-x-auto">
-                                {!activeClassTab ? <div className="text-center py-20 text-gray-400 font-bold">Vui lòng chọn lớp bên trái.</div> : (
+
+                            <div className="flex-1 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm min-h-[60vh]">
+                                {activeClassTab ? (
                                     <>
-                                        <div className="flex justify-between items-center mb-6 border-b pb-4">
-                                            <div><h2 className="text-xl font-black text-teal-600">LỚP {activeClassTab}</h2></div>
-                                            <div className="flex gap-3">
-                                                <label className="bg-orange-100 text-orange-600 px-4 py-2 rounded-xl font-bold text-xs uppercase cursor-pointer hover:bg-orange-500 hover:text-white"><Icon name="file-spreadsheet" size={16}/> Nhập Excel<input type="file" ref={fileExcelRef} accept=".xlsx, .xls" onChange={handleExcelImport} className="hidden" /></label>
-                                                <form onSubmit={handleAddSingleStudent} className="flex gap-2">
-                                                    <input name="name" type="text" placeholder="Tên học sinh..." className="bg-gray-50 border px-3 py-2 rounded-xl text-xs font-bold outline-none w-40" required/>
-                                                    <button className="bg-blue-900 text-white px-3 py-2 rounded-xl font-black hover:bg-blue-800"><Icon name="user-plus" size={16}/></button>
-                                                </form>
-                                            </div>
+                                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-100 pb-4">
+                                            <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-600 flex items-center justify-center"><Icon name="users" size={18}/></div>
+                                                LỚP {activeClassTab}
+                                            </h2>
+                                            <form onSubmit={handleAddSingleStudent} className="flex gap-2 w-full sm:w-auto">
+                                                <input name="name" type="text" placeholder="Nhập tên học sinh..." className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl text-sm font-bold flex-1 sm:w-64 outline-none focus:border-teal-500 transition-all" required/>
+                                                <button className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-md transition-all">Thêm</button>
+                                            </form>
                                         </div>
-                                        <table className="w-full text-left min-w-[600px]">
-                                            <thead><tr className="text-[10px] font-black text-gray-400 uppercase border-b border-gray-100"><th className="pb-3 text-center">STT</th><th className="pb-3">Họ và Tên</th><th className="pb-3 text-center">Thiết bị tối đa</th><th className="pb-3 text-center">Đang kết nối</th><th className="pb-3 text-right">Hành động</th></tr></thead>
-                                            <tbody>
-                                                {dataStudents.students.filter(s=>s.class===activeClassTab).sort((a,b)=>a.name.localeCompare(b.name)).map((s, idx) => (
-                                                    <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                                        <td className="py-3 text-center font-bold text-gray-400 text-xs">{idx + 1}</td> <td className="py-3 font-bold text-gray-800 text-sm">{s.name}</td>
-                                                        <td className="py-3 text-center">
-                                                            <div className="flex items-center justify-center gap-1">
-                                                                <button onClick={async()=>{await fetchAPI('update_student', {id: s.id, decDevices: true}); loadAllData();}} className="w-6 h-6 bg-gray-200 rounded font-bold hover:bg-red-200 hover:text-red-700">-</button>
-                                                                <span className="w-6 font-black text-blue-900">{s.maxDevices}</span>
-                                                                <button onClick={async()=>{await fetchAPI('update_student', {id: s.id, incDevices: true}); loadAllData();}} className="w-6 h-6 bg-gray-200 rounded font-bold hover:bg-teal-200 hover:text-teal-700">+</button>
-                                                            </div>
-                                                        </td>
-                                                        <td className="py-3 text-center"><span className={`text-[10px] px-2 py-1 rounded font-black ${s.devices && s.devices.length >= s.maxDevices ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>{s.devices ? s.devices.length : 0}</span></td>
-                                                        <td className="py-3 text-right">
-                                                            <button onClick={async()=>{await fetchAPI('update_student', {id: s.id, resetDevices: true}); loadAllData();}} className="text-[10px] bg-yellow-50 px-3 py-1.5 rounded-lg border border-yellow-200 font-bold hover:bg-yellow-500 hover:text-white text-yellow-700 mr-2" title="Học sinh báo quá thiết bị, hãy bấm nút này">Xóa thiết bị (Reset)</button>
-                                                            <button onClick={async()=>{if(confirm('Xóa học sinh này?')){await fetchAPI('delete_student', {id: s.id}); loadAllData();}}} className="text-[10px] bg-red-50 p-1.5 rounded-lg text-red-600 hover:bg-red-600 hover:text-white"><Icon name="trash-2" size={14}/></button>
-                                                        </td>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead>
+                                                    <tr className="text-[11px] font-black text-slate-400 uppercase border-b border-slate-100">
+                                                        <th className="pb-4 pl-2">Họ và Tên</th>
+                                                        <th className="pb-4 text-center">Thiết bị tối đa</th>
+                                                        <th className="pb-4 text-right pr-2">Hành động</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody>
+                                                    {dataStudents.students.filter(s=>s.class===activeClassTab).map((s, index) => (
+                                                        <tr key={s.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                                            <td className="py-4 pl-2 font-bold text-slate-700 text-sm flex items-center gap-3">
+                                                                <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center text-[10px]">{index+1}</span>
+                                                                {s.name}
+                                                            </td>
+                                                            <td className="py-4 text-center">
+                                                                <div className="flex items-center justify-center gap-3">
+                                                                    <button onClick={()=>db.collection("students").doc(s.id).update({maxDevices: Math.max(1, s.maxDevices - 1)})} className="w-7 h-7 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 font-black transition-colors">-</button>
+                                                                    <span className="font-black text-teal-600 w-4">{s.maxDevices}</span>
+                                                                    <button onClick={()=>db.collection("students").doc(s.id).update({maxDevices: s.maxDevices + 1})} className="w-7 h-7 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 font-black transition-colors">+</button>
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-4 text-right pr-2">
+                                                                <button onClick={()=>db.collection("students").doc(s.id).update({devices: []})} className="text-[11px] bg-amber-50 text-amber-600 px-3 py-2 rounded-lg font-bold mr-2 hover:bg-amber-100 transition-colors">Reset ID</button>
+                                                                <button onClick={()=>db.collection("students").doc(s.id).delete()} className="text-[11px] bg-rose-50 text-rose-600 p-2 rounded-lg hover:bg-rose-100 transition-colors"><Icon name="trash-2" size={16}/></button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {dataStudents.students.filter(s=>s.class===activeClassTab).length === 0 && (
+                                                        <tr><td colSpan="3" className="text-center py-8 text-slate-400 text-sm font-medium">Chưa có học sinh nào trong lớp này.</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </>
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20">
+                                        <Icon name="users" size={64} className="mb-4 opacity-50"/>
+                                        <p className="font-bold text-sm">Chọn một lớp bên trái để quản lý</p>
+                                    </div>
                                 )}
                             </div>
                         </div>
                     )}
-
-                    {activeTab === 'scores' && (() => {
-                        const filteredHistory = dataHistory.filter(h => {
-                            if (scoreFilter.class && h.class !== scoreFilter.class) return false;
-                            if (scoreFilter.studentName && h.name !== scoreFilter.studentName) return false;
-                            if (scoreFilter.examId && h.examId !== scoreFilter.examId) return false;
-                            return true;
-                        }).slice().reverse();
-
-                        let rankingData = [];
-                        if (scoreViewType === 'ranking' && scoreFilter.examId) {
-                            const studentBestScores = {};
-                            filteredHistory.forEach(h => {
-                                if (!studentBestScores[h.name] || parseFloat(h.score) > parseFloat(studentBestScores[h.name].score)) {
-                                    studentBestScores[h.name] = h;
-                                }
-                            });
-                            rankingData = Object.values(studentBestScores).sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
-                        } else if (scoreViewType === 'ranking') {
-                            const studentTotalScores = {};
-                            filteredHistory.forEach(h => {
-                                if (!studentTotalScores[h.name]) studentTotalScores[h.name] = { name: h.name, class: h.class, total: 0, count: 0 };
-                                studentTotalScores[h.name].total += parseFloat(h.score);
-                                studentTotalScores[h.name].count += 1;
-                            });
-                            rankingData = Object.values(studentTotalScores).map(s => ({...s, score: (s.total/s.count).toFixed(2)})).sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
-                        }
-
-                        return (
-                            <div className="flex flex-col md:flex-row gap-6 items-start">
-                                <div className="w-full md:w-64 shrink-0 bg-white p-4 rounded-3xl shadow-sm border border-gray-200">
-                                    <h3 className="font-black text-xs uppercase text-gray-500 mb-4 tracking-widest pl-2">Chọn Lớp</h3>
-                                    <div className="space-y-1 mb-4 max-h-[500px] overflow-y-auto custom-scrollbar">
-                                        <button onClick={()=>setScoreFilter({...scoreFilter, class: '', studentName: ''})} className={`w-full text-left px-4 py-3 rounded-xl font-black text-sm transition-all ${!scoreFilter.class?'bg-blue-900 text-white':'text-gray-600 hover:bg-gray-50'}`}>Tất cả Lớp</button>
-                                        {dataStudents.classes.sort().map(c => <button key={c} onClick={()=>setScoreFilter({...scoreFilter, class: c, studentName: ''})} className={`w-full text-left px-4 py-3 rounded-xl font-black text-sm transition-all ${scoreFilter.class===c?'bg-blue-900 text-white':'text-gray-600 hover:bg-gray-50'}`}><Icon name="users" size={16} className="mr-2 inline -mt-1"/> {c}</button> )}
-                                    </div>
-                                </div>
-                                <div className="flex-1 w-full bg-white p-6 rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
-                                    <div className="flex justify-between items-center mb-6 border-b pb-4">
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <h2 className="text-xl font-black text-teal-600 uppercase flex items-center gap-3">
-                                                Điểm Số 
-                                                <button onClick={loadAllData} className="px-3 py-1 bg-teal-50 hover:bg-teal-100 text-teal-600 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"><Icon name="refresh-cw" size={14}/> LÀM MỚI</button>
-                                            </h2>
-                                            <div className="flex bg-gray-100 rounded-lg p-1">
-                                                <button onClick={()=>setScoreViewType('list')} className={`px-4 py-1.5 rounded text-xs font-bold ${scoreViewType==='list'?'bg-white shadow text-teal-600':'text-gray-500'}`}>Danh sách</button>
-                                                <button onClick={()=>setScoreViewType('ranking')} className={`px-4 py-1.5 rounded text-xs font-bold ${scoreViewType==='ranking'?'bg-white shadow text-orange-600':'text-gray-500'}`}>Bảng xếp hạng</button>
-                                            </div>
-                                            {selectedScores.length > 0 && scoreViewType === 'list' && (
-                                                <button onClick={()=>handleDeleteScores(false)} className="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 rounded-lg font-black text-xs uppercase flex items-center gap-1 shadow-md">
-                                                    <Icon name="trash-2" size={14}/> Xóa {selectedScores.length} Điểm
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-gray-50 p-4 rounded-2xl border border-gray-200">
-                                        <div><label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">Tên Học sinh</label>
-                                            <select value={scoreFilter.studentName} onChange={e=>setScoreFilter({...scoreFilter, studentName: e.target.value})} className="w-full p-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold outline-none focus:border-teal-500">
-                                                <option value="">-- Tất cả HS --</option>
-                                                {dataStudents.students.filter(s => !scoreFilter.class || s.class === scoreFilter.class).sort((a,b)=>a.name.localeCompare(b.name)).map(s => <option key={s.id} value={s.name}>{s.name}</option> )}
-                                            </select>
-                                        </div>
-                                        <div><label className="block text-[10px] font-black text-gray-500 mb-1 uppercase">Bài kiểm tra</label>
-                                            <select value={scoreFilter.examId} onChange={e=>setScoreFilter({...scoreFilter, examId: e.target.value})} className="w-full p-2.5 bg-white border border-gray-300 rounded-xl text-xs font-bold outline-none truncate focus:border-teal-500">
-                                                <option value="">-- Tất cả bài --</option>{dataExams.filter(e=>e.mainType==='exam').map(e => <option key={e.id} value={e.id}>{e.title}</option> )}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="overflow-x-auto custom-scrollbar">
-                                        {scoreViewType === 'list' ? (
-                                            <table className="w-full text-left min-w-[700px]">
-                                                <thead><tr className="bg-gray-100 border-b border-gray-200 text-[10px] font-black text-gray-600 uppercase">
-                                                    <th className="p-3 text-center rounded-tl-xl w-10"> <input type="checkbox" checked={selectedScores.length > 0 && selectedScores.length === filteredHistory.length} onChange={(e) => { if (e.target.checked) setSelectedScores(filteredHistory.map(h => h.time)); else setSelectedScores([]); }} className="cursor-pointer w-4 h-4 rounded"/></th>
-                                                    <th className="p-3 text-center">STT</th><th className="p-3">Học sinh</th><th className="p-3">Lớp</th><th className="p-3">Bài kiểm tra</th><th className="p-3 text-center">Điểm số</th><th className="p-3 rounded-tr-xl">Thời gian Nộp</th></tr></thead>
-                                                <tbody>
-                                                    {filteredHistory.map((h, i) => (
-                                                        <tr key={i} className="border-b border-gray-50 hover:bg-gray-50 transition-all">
-                                                            <td className="p-3 text-center"><input type="checkbox" checked={selectedScores.includes(h.time)} onChange={(e) => { if (e.target.checked) setSelectedScores([...selectedScores, h.time]); else setSelectedScores(selectedScores.filter(t => t !== h.time)); }} className="cursor-pointer w-4 h-4 rounded text-blue-900"/></td>
-                                                            <td className="p-3 text-center font-bold text-xs text-gray-500">{i + 1}</td><td className="p-3 font-bold text-gray-800">{h.name}</td><td className="p-3 font-black text-teal-600">{h.class}</td><td className="p-3 text-xs font-bold text-gray-600">{dataExams.find(e=>e.id===h.examId)?.title || 'Đề đã xóa'}</td><td className="p-3 text-center font-black text-red-600 text-lg">{h.score}</td><td className="p-3 text-[10px] font-bold text-gray-500">{h.time}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        ) : (
-                                            <table className="w-full text-left min-w-[600px]">
-                                                <thead><tr className="bg-orange-50 border-b border-orange-100 text-[10px] font-black text-orange-800 uppercase">
-                                                    <th className="p-3 text-center rounded-tl-xl">HẠNG</th><th className="p-3">Học sinh</th><th className="p-3">Lớp</th><th className="p-3 text-center rounded-tr-xl">{scoreFilter.examId ? 'Điểm cao nhất' : 'Điểm Trung Bình'}</th></tr></thead>
-                                                <tbody>
-                                                    {rankingData.map((h, i) => (
-                                                        <tr key={i} className="border-b border-gray-50 hover:bg-orange-50/50 transition-all">
-                                                            <td className="p-3 text-center font-black text-lg text-orange-500">{i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</td>
-                                                            <td className="p-3 font-bold text-gray-800">{h.name}</td><td className="p-3 font-black text-teal-600">{h.class}</td><td className="p-3 text-center font-black text-red-600 text-xl">{h.score}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                        {filteredHistory.length === 0 && <div className="text-center py-10 text-gray-400 font-bold">Không tìm thấy dữ liệu điểm phù hợp.</div>}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })()}
-                    {editingExam && <ConfigModal exam={editingExam} onClose={()=>setEditingExam(null)} onSave={async (data)=>{ await fetchAPI('save_full_config', {examId: editingExam.id, ...data}); setEditingExam(null); loadAllData(); alert('Đã lưu cấu hình!'); }} />}
+                    
+                    {activeTab === 'exams' && (
+                        <div className="bg-white p-10 rounded-3xl text-center border border-slate-100 shadow-sm text-slate-400 py-32 font-medium">
+                            <Icon name="hammer" size={48} className="mx-auto mb-4 opacity-50" />
+                            Giao diện quản lý tài liệu có thể tái sử dụng từ code gốc của Thầy hoặc nâng cấp sau. <br/> Trọng tâm nâng cấp bản này tập trung vào xử lý Triệt Để lỗi Học Sinh & Google Sheets.
+                        </div>
+                    )}
                 </div>
             );
         };
