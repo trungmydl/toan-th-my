@@ -159,7 +159,6 @@
             const [uploadSubCategory, setUploadSubCategory] = useState('ly_thuyet');
             const [uploadTitle, setUploadTitle] = useState('');
             
-            // SỬ DỤNG ĐƯỜNG DẪN RELATIVE CỦA GITHUB
             const [fileUrl, setFileUrl] = useState('');
 
             useEffect(() => {
@@ -172,10 +171,24 @@
             const loadAllData = async () => {
                 try {
                     const [r1, r2, r3] = await Promise.all([ fetchAPI('list'), fetchAPI('history'), fetchAPI('students') ]);
-                    setDataExams(r1 || []); setDataHistory(r2 || []); setDataStudents(r3 || {classes: [], students: []});
-                    if (r3 && r3.classes && r3.classes.length > 0 && !activeClassTab) setActiveClassTab(r3.classes[0]); 
+                    
+                    // CHỐNG SẬP TRẮNG MÀN HÌNH: Đảm bảo dữ liệu nhận được luôn là Mảng
+                    setDataExams(Array.isArray(r1) ? r1 : []); 
+                    setDataHistory(Array.isArray(r2) ? r2 : []); 
+                    
+                    if (r3 && Array.isArray(r3.classes)) {
+                        setDataStudents(r3);
+                        if (r3.classes.length > 0 && !activeClassTab) setActiveClassTab(r3.classes[0]); 
+                    } else {
+                        setDataStudents({classes: [], students: []});
+                    }
+                    
+                    if (r1 && r1.error) console.error("Lỗi Google Script:", r1.error);
                     setSelectedScores([]);
-                } catch(e) { console.error(e); }
+                } catch(e) { 
+                    console.error("Lỗi tải dữ liệu", e); 
+                    setDataExams([]); setDataHistory([]); setDataStudents({classes: [], students: []});
+                }
             };
 
             const handleUpload = async (e) => {
@@ -198,8 +211,8 @@
                     lesson: fd.get('lesson'),
                     timeLimit: fd.get('timeLimit'),
                     config: config,
-                    fileUrl: fileUrl, // Đường dẫn tới thư mục GitHub, vd: dethi/de1.pdf
-                    filePath: fileUrl, // Để tương thích ngược với index.html cũ
+                    fileUrl: fileUrl,
+                    filePath: fileUrl,
                     type: selectedType,
                     visible: true, showAnswers: true, recordScore: true, strictMode: true
                 };
@@ -207,9 +220,9 @@
                 setUploading(true);
                 try {
                     const data = await fetchAPI('upload', uploadData);
-                    if (data.success) { 
+                    if (data && data.success) { 
                         e.target.reset(); setUploadTitle(''); setFileUrl(''); setSelectedType('pdf'); loadAllData(); alert('Đã thêm bài mới thành công!'); setShowUploadMobile(false);
-                    } else { alert('LỖI: ' + (data.message || data.error)); }
+                    } else { alert('LỖI: ' + (data?.message || data?.error || 'Không rõ')); }
                 } catch(err) { alert('Lỗi kết nối tới Google Sheets!'); }
                 setUploading(false);
             };
@@ -229,7 +242,7 @@
             const handleAddSingleStudent = async (e) => {
                 e.preventDefault(); const fd = new FormData(e.target);
                 const data = await fetchAPI('add_student', {name: fd.get('name'), class: activeClassTab});
-                if(data.success) { e.target.reset(); loadAllData(); } else alert(data.message);
+                if(data && data.success) { e.target.reset(); loadAllData(); } else alert(data?.message || 'Lỗi');
             };
 
             const handleExcelImport = (e) => {
